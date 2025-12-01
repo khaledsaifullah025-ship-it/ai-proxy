@@ -6,12 +6,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Root route – friendly message
+// ======== CONFIG ========
+const STABLE_HORDE_KEY = "ZnSuFFs1CaDzGlN0IxmLVA"; // ✅ Your API key
+
+// ======== ROOT ========
 app.get("/", (req, res) => {
   res.send("AI Proxy is running! Use the frontend to generate images via POST /generate.");
 });
 
-// POST /generate
+// ======== GENERATE IMAGE ========
 app.post("/generate", async (req, res) => {
   try {
     const { prompt, params } = req.body;
@@ -19,7 +22,6 @@ app.post("/generate", async (req, res) => {
       return res.status(400).json({ error: "Prompt and params required" });
     }
 
-    // Use safe defaults if width/height not provided
     const width = params.width || 1024;
     const height = params.height || 1024;
 
@@ -34,26 +36,29 @@ app.post("/generate", async (req, res) => {
       }
     };
 
-    // Submit generation job to Stable Horde
+    // Submit generation job
     const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "apikey": STABLE_HORDE_KEY
+      },
       body: JSON.stringify(payload)
     }).then(r => r.json());
 
     console.log("Submit response:", submit);
 
     if (!submit.id) {
-      return res.status(500).json({ error: "Failed to submit job.", details: submit });
+      return res.status(500).json({ error: "Failed to submit job", details: submit });
     }
 
     const jobId = submit.id;
     let attempts = 0;
     let result;
 
-    // Poll for result (max 2 minutes)
+    // Poll for result (max ~2 minutes)
     while (attempts < 48) {
-      await new Promise(r => setTimeout(r, 2500));
+      await new Promise(r => setTimeout(r, 2500)); // wait 2.5 seconds
       const status = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`)
         .then(r => r.json());
 
@@ -67,10 +72,10 @@ app.post("/generate", async (req, res) => {
     }
 
     if (!result) {
-      return res.status(500).json({ error: "Generation timed out. Try smaller image size or wait longer." });
+      return res.status(500).json({ error: "Generation timed out. Try smaller image or wait longer." });
     }
 
-    // Return base64 image
+    // Return image as base64
     res.json({ image: result });
 
   } catch (err) {
@@ -79,6 +84,6 @@ app.post("/generate", async (req, res) => {
   }
 });
 
-// Use Render port or local port
+// ======== START SERVER ========
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Proxy running on port ${PORT}`));
