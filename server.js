@@ -6,23 +6,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HORDE_API_KEY = "0000000000"; // no key needed for anon usage
-
 app.post("/generate", async (req, res) => {
   try {
     const payload = req.body;
 
-    // 1. Submit job
+    // 1. Submit job to Stable Horde
     const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "apikey": HORDE_API_KEY
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     }).then(r => r.json());
 
     const id = submit.id;
+    if (!id) return res.status(500).json({ error: "Failed to get job id." });
+
     console.log("Job submitted:", id);
 
     // 2. Poll until done
@@ -45,4 +42,6 @@ app.post("/generate", async (req, res) => {
   }
 });
 
-app.listen(3000, () => console.log("Proxy running on port 3000"));
+// ✅ Correct port for Render
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Proxy running on port " + PORT));
