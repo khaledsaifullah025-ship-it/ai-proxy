@@ -6,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Root route (test)
+// Root route
 app.get("/", (req, res) => {
   res.send("AI Proxy is running! Use /generate to POST requests.");
 });
@@ -14,35 +14,60 @@ app.get("/", (req, res) => {
 // POST /generate
 app.post("/generate", async (req, res) => {
   try {
-    const payload = req.body;
+    const { prompt, params } = req.body;
+    if (!prompt || !params) {
+      return res.status(400).json({ error: "Prompt and params required" });
+    }
 
-    // Submit job to Stable Horde (anonymous)
+    const payload = {
+      prompt,
+      params: {
+        ...params,
+        steps: 30,             // Optional: generation quality
+        sampler_name: "k_euler",
+        n: 1
+      }
+    };
+
+    // Submit job
     const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     }).then(r => r.json());
 
-    const id = submit.id;
-    if (!id) return res.status(500).json({ error: "Failed to get job id." });
+    console.log("Submit response:", submit);
 
-    console.log("Job submitted:", id);
+    if (!submit.id) {
+      return res.status(500).json({ error: "Failed to submit job.", details: submit });
+    }
 
-    // Poll until done
+    const jobId = submit.id;
+    let attempts = 0;
     let result;
-    while (true) {
+
+    // Polling loop (max 60s)
+    while (attempts < 24) {
       await new Promise(r => setTimeout(r, 2500));
-      const check = await fetch(`https://stablehorde.net/api/v2/generate/status/${id}`).then(r => r.json());
-      if (check.done) {
-        result = check.generations[0].img;
+      const status = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`)
+        .then(r => r.json());
+
+      console.log("Poll status:", status);
+
+      if (status.done && status.generations?.length > 0) {
+        result = status.generations[0].img;
         break;
       }
+
+      attempts++;
     }
+
+    if (!result) return res.status(500).json({ error: "Generation timed out." });
 
     res.json({ image: result });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Generation failed." });
+    console.error("Server error:", err);
+    res.status(500).json({ error: "Generation failed: " + err.message });
   }
 });
 
