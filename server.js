@@ -6,11 +6,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Root route (test)
+app.get("/", (req, res) => {
+  res.send("AI Proxy is running! Use /generate to POST requests.");
+});
+
+// POST /generate
 app.post("/generate", async (req, res) => {
   try {
     const payload = req.body;
 
-    // 1. Submit job to Stable Horde
+    // Submit job to Stable Horde (anonymous)
     const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -22,13 +28,11 @@ app.post("/generate", async (req, res) => {
 
     console.log("Job submitted:", id);
 
-    // 2. Poll until done
+    // Poll until done
     let result;
     while (true) {
       await new Promise(r => setTimeout(r, 2500));
-
       const check = await fetch(`https://stablehorde.net/api/v2/generate/status/${id}`).then(r => r.json());
-
       if (check.done) {
         result = check.generations[0].img;
         break;
@@ -42,6 +46,6 @@ app.post("/generate", async (req, res) => {
   }
 });
 
-// ✅ Correct port for Render
+// Use Render port
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log("Proxy running on port " + PORT));
