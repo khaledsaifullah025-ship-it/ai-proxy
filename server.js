@@ -7,51 +7,38 @@ app.use(cors());
 app.use(express.json());
 
 // ======== CONFIG ========
-const STABLE_HORDE_KEY = "ZnSuFFs1CaDzGlN0IxmLVA"; // your API key
+const STABLE_HORDE_KEY = "ZnSuFFs1CaDzGlN0IxmLVA"; // your key
 
 // ======== ROOT ========
 app.get("/", (req, res) => {
-  res.send("AI Proxy is running with Optimized Stable Horde Settings!");
+  res.send("AI Proxy is running! Use POST /generate to request images.");
 });
 
 // ======== GENERATE IMAGE ========
 app.post("/generate", async (req, res) => {
   try {
-    const { prompt } = req.body;
-    if (!prompt) {
-      return res.status(400).json({ error: "Prompt is required" });
+    const { prompt, params } = req.body;
+
+    if (!prompt || !params) {
+      return res.status(400).json({ error: "Prompt and params required" });
     }
 
-    // === SUPER OPTIMIZED PARAMETERS ===
+    const width = params.width || 512;
+    const height = params.height || 512;
+
     const payload = {
       prompt,
       params: {
-        width: 512,              // 🔥 lowest kudos + fastest
-        height: 512,
-        steps: 20,               // low steps = faster
-        sampler_name: "k_euler", // works with almost all workers
+        width,
+        height,
         n: 1,
-
-        // Performance tricks:
-        cfg_scale: 7,
-        seed: 0,
-        karras: false,
-        hires_fix: false,
-        tiling: false,
-        
-        // FAST QUEUE
-        slow_workers: false,
-
-        // Helps match more workers
-        censor_nsfw: true,
-      },
-
-      // PRIORITY BOOST
-      max_priority: true,
-      trusted_workers: false
+        steps: 30,
+        sampler_name: "k_euler"
+        // ❗ NO seed — fixes validation error
+      }
     };
 
-    // === SUBMIT JOB ===
+    // Submit job
     const submit = await fetch("https://stablehorde.net/api/v2/generate/async", {
       method: "POST",
       headers: {
@@ -71,19 +58,16 @@ app.post("/generate", async (req, res) => {
     let attempts = 0;
     let result;
 
-    // === POLLING — 1 poll every 5 seconds (safe, no rate limits) ===
-    while (attempts < 60) { 
-      await new Promise(r => setTimeout(r, 5000)); // ⏳ wait 5 seconds per poll
+    // Poll result (max 2 minutes)
+    while (attempts < 48) {
+      await new Promise(r => setTimeout(r, 2500)); // 2.5s delay
 
-      const status = await fetch(`https://stablehorde.net/api/v2/generate/status/${jobId}`)
-        .then(r => r.json())
-        .catch(() => null);
+      const status = await fetch(
+        `https://stablehorde.net/api/v2/generate/status/${jobId}`
+      ).then(r => r.json());
 
       console.log("Poll status:", status);
 
-      if (!status) continue;
-
-      // If image is ready
       if (status.done && status.generations?.length > 0) {
         result = status.generations[0].img;
         break;
@@ -94,15 +78,15 @@ app.post("/generate", async (req, res) => {
 
     if (!result) {
       return res.status(500).json({
-        error: "Stable Horde queue too busy. Try again with a smaller prompt or later."
+        error: "Generation timed out. Try again or reduce image size."
       });
     }
 
-    return res.json({ image: result });
+    res.json({ image: result });
 
   } catch (err) {
     console.error("Server error:", err);
-    res.status(500).json({ error: "Error: " + err.message });
+    res.status(500).json({ error: "Generation failed: " + err.message });
   }
 });
 
